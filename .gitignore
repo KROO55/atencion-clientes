@@ -7,3 +7,5 @@ frontend/dist/
 frontend/.angular/
 .operator-key
 .env
+.local-services.json
+.logs/

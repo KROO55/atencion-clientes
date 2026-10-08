@@ -19,8 +19,8 @@ cd atencion-clientes
 .\start-local.ps1
 ```
 
-El script instala las dependencias y abre dos terminales. Frontend: http://localhost:4200. API: http://127.0.0.1:8000/api/health. La clave de operador se guarda en el archivo local ignorado `.operator-key`.
-Para detener el servicio, pulsa Ctrl+C en ambas terminales.
+El script instala las dependencias, compila Angular e inicia ambos servicios en segundo plano. Frontend: http://localhost:4200. API: http://127.0.0.1:8000/api/health. La clave de operador se guarda en el archivo local ignorado `.operator-key`.
+Para detener los servicios, ejecuta `.\\stop-local.ps1`. Consulta `.logs/` para ver los registros.
 
 También puedes iniciar manualmente (dos terminales):
 

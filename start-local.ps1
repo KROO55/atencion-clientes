@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
+if (Test-Path -LiteralPath '.local-services.json') { throw 'Ejecuta .\stop-local.ps1 antes de iniciar otra vez.' }
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) { throw 'Instala Python 3.11 o superior y vuelve a ejecutar.' }
 if (-not (Get-Command npm.cmd -ErrorAction SilentlyContinue)) { throw 'Instala Node.js 22.12 o superior y vuelve a ejecutar.' }
 
@@ -29,11 +30,21 @@ $keyValue = (Get-Content -LiteralPath $keyPath -Raw).Trim()
 if ($keyValue.Length -lt 16) { throw 'La clave de operador debe tener al menos 16 caracteres.' }
 $env:OPERATOR_KEY = $keyValue
 
-# Static helper scripts avoid interpolating paths or secrets into shell code.
-Start-Process powershell.exe -WorkingDirectory $projectRoot -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', '.\scripts\run-backend.ps1'
-Start-Process powershell.exe -WorkingDirectory $projectRoot -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-File', '.\scripts\run-frontend.ps1'
-
+New-Item -ItemType Directory -Path '.logs' -Force | Out-Null
+$backendProcess = Start-Process -FilePath (Join-Path $projectRoot '.venv\Scripts\python.exe') -WorkingDirectory $projectRoot -ArgumentList '-m', 'uvicorn', 'backend.main:app', '--host', '127.0.0.1', '--port', '8000' -WindowStyle Hidden -PassThru -RedirectStandardOutput '.logs/backend.log' -RedirectStandardError '.logs/backend-error.log'
+try {
+    $frontendRoot = Join-Path $projectRoot 'frontend'
+    $frontendProcess = Start-Process -FilePath (Get-Command node.exe).Source -WorkingDirectory $frontendRoot -ArgumentList 'node_modules/@angular/cli/bin/ng.js', 'serve', '--host', '127.0.0.1', '--proxy-config', 'proxy.conf.json' -WindowStyle Hidden -PassThru -RedirectStandardOutput '.logs/frontend.log' -RedirectStandardError '.logs/frontend-error.log'
+} catch {
+    Stop-Process -Id $backendProcess.Id -ErrorAction SilentlyContinue
+    throw
+}
+@(
+    @{ Id = $backendProcess.Id; Started = $backendProcess.StartTime.ToUniversalTime().Ticks; Name = 'python' },
+    @{ Id = $frontendProcess.Id; Started = $frontendProcess.StartTime.ToUniversalTime().Ticks; Name = 'node' }
+) | ConvertTo-Json | Set-Content -LiteralPath '.local-services.json'
 Write-Host 'Frontend: http://localhost:4200'
 Write-Host 'API: http://127.0.0.1:8000/api/health'
 Write-Host 'La clave de operador está en .operator-key. Usa Get-Content .operator-key para consultarla.'
-Write-Host 'Espera a que ambas terminales indiquen que están listas.'
+Write-Host 'Servicios iniciados en segundo plano. Consulta .logs para confirmar que estén listos.'
+Write-Host 'Para detenerlos: .\stop-local.ps1'
