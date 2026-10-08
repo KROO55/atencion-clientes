@@ -29,6 +29,7 @@ export class AppComponent implements OnInit, OnDestroy {
   busy = false;
   loading = false;
   private polling = false;
+  private operatorRequestId = '';
   private timer?: ReturnType<typeof setInterval>;
   get activeDesks(): number { return this.state.desks.filter(d => !!d.ticket).length; }
   get hasActiveTicket(): boolean { return this.ticket?.status === 'waiting' || this.ticket?.status === 'serving'; }
@@ -112,15 +113,29 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   logout(): void { this.key = ''; this.authenticated = false; }
 
+  async addTurn(): Promise<void> {
+    if (this.busy || !this.connected || !this.authenticated) return;
+    this.busy = true; this.error = ''; this.notice = '';
+    try {
+      // Keep this ID on a failed request so retrying does not duplicate a turn.
+      this.operatorRequestId ||= crypto.randomUUID();
+      const added = await this.api<Ticket>('/tickets', 'POST', {request_id: this.operatorRequestId});
+      this.operatorRequestId = '';
+      this.notice = added.desk_id ? added.number + ' asignado a Mesa ' + added.desk_id : added.number + ' agregado a la fila de espera';
+      await this.refresh();
+    } catch (error) { this.error = this.message(error); }
+    finally { this.busy = false; }
+  }
+
   async deskAction(desk: Desk, action: 'next' | 'finish' | 'pause'): Promise<void> {
     if (this.busy) return;
     this.busy = true; this.error = ''; this.notice = '';
     const body = action === 'finish' ? {ticket_id: desk.ticket?.id} :
       action === 'pause' ? {paused: !desk.paused} : undefined;
     try {
-      await this.api('/desks/' + desk.id + '/' + action, 'POST', body, true);
+      const result = await this.api<{next_ticket?: Ticket | null}>('/desks/' + desk.id + '/' + action, 'POST', body, true);
       this.notice = action === 'next' ? 'Turno llamado a mesa ' + desk.id :
-        action === 'finish' ? 'Atención finalizada' : 'Estado de mesa actualizado';
+        action === 'finish' ? 'Atención finalizada' + (result.next_ticket ? '. ' + result.next_ticket.number + ' asignado a Mesa ' + desk.id : '. Mesa disponible') : 'Estado de mesa actualizado';
       await this.refresh();
     } catch (error) { this.error = this.message(error); await this.refresh(); }
     finally { this.busy = false; }
@@ -130,3 +145,4 @@ export class AppComponent implements OnInit, OnDestroy {
     return {waiting:'En espera', serving:'Es tu turno', completed:'Atención finalizada', cancelled:'Cancelado'}[status];
   }
 }
+

@@ -50,7 +50,7 @@
       </section>
 
       <section class="desks-section" *ngIf="view !== 'mesas' || authenticated">
-        <div class="section-title"><div><h2>{{view === 'mesas' ? 'Panel de atención' : 'Nuestras mesas'}}</h2><p>El siguiente turno se llama cuando una mesa queda libre.</p></div><button class="text-button" *ngIf="view === 'mesas'" (click)="logout()">Cerrar sesión</button></div>
+        <div class="section-title"><div><h2>{{view === 'mesas' ? 'Panel de atención' : 'Nuestras mesas'}}</h2><p>Los turnos se asignan automáticamente cuando una mesa queda libre.</p></div><div *ngIf="view === 'mesas'" class="operator-tools"><button class="primary" [disabled]="busy || !connected" (click)="addTurn()">{{busy ? 'Procesando…' : '+ Agregar turno'}}</button><button class="text-button" (click)="logout()">Cerrar sesión</button></div></div>
         <div class="desks">
           <article *ngFor="let desk of state.desks" class="desk-card" [class.serving]="desk.ticket" [class.paused]="desk.paused">
             <div class="desk-top"><span class="desk-icon">▦</span><span class="desk-status"><i></i>{{desk.ticket ? 'En atención' : desk.paused ? 'Pausada' : 'Disponible'}}</span></div>
@@ -76,3 +76,4 @@
     </section>
   </main>
 </div>
+

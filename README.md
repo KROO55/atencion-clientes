@@ -4,7 +4,7 @@ Aplicación con **Python/FastAPI**, **SQLite** y **Angular 20** para una fila vi
 ## Funciones
 - Apartado Turnos con botón **Tomar turno**, folio, posición y mesa asignada.
 - Pantalla pública con fila por orden de llegada y cuatro mesas.
-- Panel de atención: llamar siguiente, finalizar y pausar una mesa libre.
+- Panel de atención: Agregar turno para registrar varios clientes, Finalizar atención y pausar una mesa libre.
 - SQLite conserva los turnos al reiniciar. Las transacciones evitan asignaciones duplicadas.
 - Cancelación del turno en espera y recuperación del turno del navegador.
 - Panel protegido por clave de operador; los turnos públicos no exponen claves de seguimiento.
@@ -54,7 +54,7 @@ La app fue verificada en Windows con acceso completo en Codex: creación de turn
 - `QUEUE_DB`: ruta SQLite, predeterminada `backend/data/queue.db`.
 - La API acepta CORS únicamente de localhost:4200; Angular usa proxy /api.
 - El folio es una secuencia global persistente y no se reinicia cada día.
-- Una mesa solo puede atender un turno. Finalizar no llama automáticamente al siguiente: pulsa **Llamar siguiente**.
-- El turno del cliente se conserva en localStorage de ese navegador. Cierra/cancela el turno antes de utilizar el mismo navegador para otra persona.
+- Los turnos nuevos ocupan automáticamente la primera mesa libre (1 a 4). Si todas están ocupadas o pausadas, quedan en fila por orden de llegada. Al finalizar, se asigna el siguiente turno automáticamente; al reactivar una mesa, también se atiende la fila. Una mesa solo puede atender un turno.
+- El turno del cliente se conserva en localStorage de ese navegador. Para registrar varios clientes desde la misma laptop, entra en Mesas de atención y usa Agregar turno; cada clic genera un folio independiente.
 - Versión para uso local. Para exposición pública hacen falta HTTPS, gestión de identidades de operadores, limitación de solicitudes, política de retención y despliegue adecuado.
 

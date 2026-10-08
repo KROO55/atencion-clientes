@@ -54,6 +54,20 @@ def initialize():
             ON tickets(desk_id) WHERE status='serving'""")
         conn.execute("CREATE INDEX IF NOT EXISTS waiting_order ON tickets(status,id)")
         conn.executemany("INSERT OR IGNORE INTO desks(id) VALUES(?)", [(i,) for i in range(1,5)])
+        assign_waiting(conn)
+
+
+def assign_waiting(conn):
+    """Must run inside the caller's write transaction, preserving FIFO order."""
+    free_desks = conn.execute("""SELECT id FROM desks WHERE paused=0
+        AND NOT EXISTS (SELECT 1 FROM tickets WHERE desk_id=desks.id AND status='serving')
+        ORDER BY id""").fetchall()
+    for desk in free_desks:
+        ticket = conn.execute("SELECT id FROM tickets WHERE status='waiting' ORDER BY id LIMIT 1").fetchone()
+        if ticket is None:
+            break
+        conn.execute("UPDATE tickets SET status='serving',desk_id=?,called_at=? WHERE id=?",
+                     (desk["id"], now(), ticket["id"]))
 
 
 @asynccontextmanager
@@ -133,6 +147,7 @@ def take_ticket(payload: NewTicket):
     with connection(True) as conn:
         # Same request after a network retry returns the original ticket.
         conn.execute("INSERT OR IGNORE INTO tickets(token,created_at) VALUES(?,?)", (token, now()))
+        assign_waiting(conn)
         row = conn.execute("SELECT * FROM tickets WHERE token=?", (token,)).fetchone()
         return {**ticket_view(conn, row), "token": token}
 
@@ -188,7 +203,9 @@ def finish(desk_id: int, payload: Finish):
         if row is None:
             raise HTTPException(409, "Ese turno ya no está siendo atendido en esta mesa")
         conn.execute("UPDATE tickets SET status='completed',completed_at=? WHERE id=?", (now(), row["id"]))
-        return {"status": "completed"}
+        assign_waiting(conn)
+        next_ticket = conn.execute("SELECT * FROM tickets WHERE desk_id=? AND status='serving'", (desk_id,)).fetchone()
+        return {"status": "completed", "next_ticket": ticket_view(conn, next_ticket) if next_ticket else None}
 
 
 @app.post("/api/desks/{desk_id}/pause", dependencies=[Depends(operator)])
@@ -198,4 +215,6 @@ def pause(desk_id: int, payload: Pause):
         if conn.execute("SELECT 1 FROM tickets WHERE desk_id=? AND status='serving'", (desk_id,)).fetchone():
             raise HTTPException(409, "Finaliza la atención antes de pausar la mesa")
         conn.execute("UPDATE desks SET paused=? WHERE id=?", (int(payload.paused), desk_id))
+        assign_waiting(conn)
         return {"paused": payload.paused}
+
