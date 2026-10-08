@@ -1,0 +1,78 @@
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="/"><span class="brand-icon">t.</span><span>turno<span class="brand-dot">.</span><small>ATENCIÓN A CLIENTES</small></span></a>
+    <div class="nav-label">ESPACIO DE ATENCIÓN</div>
+    <nav aria-label="Secciones">
+      <button [class.selected]="view === 'turnos'" (click)="view = 'turnos'"><span>◈</span> Turnos</button>
+      <button [class.selected]="view === 'pantalla'" (click)="view = 'pantalla'"><span>▤</span> Pantalla de espera</button>
+      <button [class.selected]="view === 'mesas'" (click)="view = 'mesas'"><span>▦</span> Mesas de atención</button>
+    </nav>
+    <div class="sidebar-foot"><span class="connection-dot" [class.offline]="!connected"></span>{{connected ? 'Sistema conectado' : 'Sin conexión'}}<small>4 mesas · una sola fila</small></div>
+  </aside>
+
+  <main>
+    <header class="topbar"><span>Centro de atención <span class="slash">/</span> {{view === 'turnos' ? 'Turnos' : view === 'pantalla' ? 'Pantalla de espera' : 'Mesas'}}</span><span class="live"><span class="connection-dot" [class.offline]="!connected"></span>{{connected ? 'En vivo' : 'Reconectando'}}</span></header>
+    <section class="content">
+      <div class="heading"><div><div class="eyebrow">BIENVENIDO A TU CENTRO DE ATENCIÓN</div><h1>{{view === 'turnos' ? 'Tu tiempo importa.' : view === 'pantalla' ? 'Estamos para atenderte.' : 'Una atención, a la vez.'}}</h1><p>{{view === 'turnos' ? 'Toma un turno y sigue tu lugar en la fila desde aquí.' : view === 'pantalla' ? 'Consulta tu folio y acércate a la mesa cuando te llamemos.' : 'Gestiona los turnos de las cuatro mesas de atención.'}}</p></div><span class="tag">Fila virtual</span></div>
+      <div class="alert error" role="alert" *ngIf="error">{{error}} <button aria-label="Cerrar error" (click)="error = ''">×</button></div>
+      <div class="alert success" role="status" *ngIf="notice">{{notice}} <button aria-label="Cerrar aviso" (click)="notice = ''">×</button></div>
+      <div class="alert error" role="status" *ngIf="!connected">No hay conexión con el servicio. Intentaremos conectar de nuevo automáticamente.</div>
+
+      <div class="stats">
+        <article><div class="stat-icon violet">◷</div><div><span>En espera</span><strong>{{state.waiting.length}}</strong></div><small>Turnos en la fila</small></article>
+        <article><div class="stat-icon teal">▦</div><div><span>En atención</span><strong>{{activeDesks}}<em> / 4</em></strong></div><small>Mesas ocupadas</small></article>
+        <article><div class="stat-icon blue">✓</div><div><span>Atenciones finalizadas</span><strong>{{state.completed}}</strong></div><small>Total registrado</small></article>
+      </div>
+
+      <section *ngIf="view === 'turnos'" class="customer-grid">
+        <article class="take-card">
+          <span class="small-label">TU PRÓXIMO PASO</span><div class="ticket-art" aria-hidden="true">↗</div>
+          <h2>Todo empieza<br>con un turno.</h2><p>Sin filas físicas. Registra tu lugar y espera a que una de nuestras mesas esté disponible.</p>
+          <button class="primary take-button" (click)="takeTurn()" [disabled]="busy || !connected || hasActiveTicket">{{busy ? 'Procesando…' : hasActiveTicket ? 'Ya tienes un turno activo' : 'Tomar turno'}} <span>→</span></button>
+          <small>Atendemos por orden de llegada.</small>
+        </article>
+        <article class="ticket-card">
+          <div class="card-title"><h2>Mi turno</h2><span class="pill">{{ticket ? statusLabel(ticket.status) : 'Sin turno'}}</span></div>
+          <ng-container *ngIf="ticket; else emptyTicket">
+            <div class="ticket-number" [class.called]="ticket.status === 'serving'">{{ticket.number}}</div>
+            <p class="ticket-sub" aria-live="polite">{{ticket.status === 'waiting' ? 'Tu lugar está reservado' : ticket.status === 'serving' ? 'Acércate a la mesa indicada' : statusLabel(ticket.status)}}</p>
+            <div class="ticket-details"><div><span>Tu posición</span><strong>{{ticket.position ?? '—'}}</strong></div><div><span>Mesa asignada</span><strong>{{ticket.desk_id ?? '—'}}</strong></div></div>
+            <p class="ticket-help" *ngIf="ticket.status === 'waiting'">Mantén esta página abierta para ver cuándo te llamen.</p>
+            <button class="text-button" *ngIf="ticket.status === 'waiting'" [disabled]="busy || !connected" (click)="cancel()">Cancelar mi turno</button>
+          </ng-container>
+          <ng-template #emptyTicket><div class="empty-ticket"><span>⌁</span><h3>Aún no tienes un turno</h3><p>Pulsa “Tomar turno” para entrar a la fila.<br>Tu folio aparecerá aquí.</p></div></ng-template>
+        </article>
+      </section>
+
+      <section *ngIf="view === 'mesas' && !authenticated" class="login-card">
+        <span class="small-label">ACCESO DE OPERADORES</span><h2>Mesas de atención</h2><p>Introduce la clave local para gestionar los turnos.</p>
+        <form (ngSubmit)="login()"><label for="operator-key">Clave de operador</label><input id="operator-key" name="key" [(ngModel)]="key" type="password" autocomplete="current-password" required><button class="primary" [disabled]="loading || !key || !connected">{{loading ? 'Validando…' : 'Entrar al panel'}}</button></form>
+      </section>
+
+      <section class="desks-section" *ngIf="view !== 'mesas' || authenticated">
+        <div class="section-title"><div><h2>{{view === 'mesas' ? 'Panel de atención' : 'Nuestras mesas'}}</h2><p>El siguiente turno se llama cuando una mesa queda libre.</p></div><button class="text-button" *ngIf="view === 'mesas'" (click)="logout()">Cerrar sesión</button></div>
+        <div class="desks">
+          <article *ngFor="let desk of state.desks" class="desk-card" [class.serving]="desk.ticket" [class.paused]="desk.paused">
+            <div class="desk-top"><span class="desk-icon">▦</span><span class="desk-status"><i></i>{{desk.ticket ? 'En atención' : desk.paused ? 'Pausada' : 'Disponible'}}</span></div>
+            <h3>Mesa {{desk.id}}</h3><strong>{{desk.ticket?.number || '—'}}</strong><p>{{desk.ticket ? 'Turno en atención' : desk.paused ? 'Temporalmente fuera de servicio' : 'Lista para el siguiente turno'}}</p>
+            <div class="desk-actions" *ngIf="view === 'mesas'">
+              <button class="primary" *ngIf="!desk.ticket" [disabled]="busy || !connected || desk.paused || !state.waiting.length" (click)="deskAction(desk, 'next')">Llamar siguiente</button>
+              <button class="primary finish" *ngIf="desk.ticket" [disabled]="busy || !connected" (click)="deskAction(desk, 'finish')">Finalizar atención</button>
+              <button class="text-button" *ngIf="!desk.ticket" [disabled]="busy || !connected" (click)="deskAction(desk, 'pause')">{{desk.paused ? 'Reactivar mesa' : 'Pausar mesa'}}</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="queue-card">
+        <div class="section-title"><div><h2>Próximos turnos</h2><p>Una fila compartida para las cuatro mesas.</p></div><span class="count-pill">{{state.waiting.length}} en espera</span></div>
+        <div class="queue-empty" *ngIf="!state.waiting.length"><span>✓</span><div><strong>La fila está libre</strong><p>Los nuevos turnos aparecerán aquí.</p></div></div>
+        <div class="queue-list" *ngIf="state.waiting.length">
+          <div class="queue-row" *ngFor="let item of state.waiting | slice:0:20; let first = first"><span class="position">{{item.position}}</span><strong>{{item.number}}</strong><span class="queue-status">{{first ? 'Siguiente en la fila' : 'En espera'}}</span></div>
+          <p *ngIf="state.waiting.length > 20" class="more">{{state.waiting.length - 20}} turnos más en espera</p>
+        </div>
+      </section>
+      <footer>Una mejor experiencia de atención, turno a turno.<span>Actualización cada 2 segundos</span></footer>
+    </section>
+  </main>
+</div>

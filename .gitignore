@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+backend/data/
+node_modules/
+frontend/dist/
+frontend/.angular/
+.operator-key
+.env
