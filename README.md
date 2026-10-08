@@ -19,7 +19,7 @@ cd atencion-clientes
 .\start-local.ps1
 ```
 
-El script instala las dependencias, compila Angular e inicia ambos servicios en segundo plano. Frontend: http://localhost:4200. API: http://127.0.0.1:8000/api/health. La clave de operador se guarda en el archivo local ignorado `.operator-key`.
+El script instala las dependencias e inicia ambos servicios en segundo plano. Frontend: http://127.0.0.1:4301. API: http://127.0.0.1:8010/api/health. Los puertos se pueden configurar mediante FrontendPort y BackendPort. Las dependencias Python se instalan dentro de .python-packages para evitar problemas con entornos virtuales en Windows. La clave de operador se guarda en el archivo local ignorado `.operator-key`.
 Para detener los servicios, ejecuta `.\\stop-local.ps1`. Consulta `.logs/` para ver los registros.
 
 También puedes iniciar manualmente (dos terminales):
@@ -47,7 +47,7 @@ cd frontend
 npm run build
 ```
 GitHub Actions ejecuta las pruebas del backend y la compilación del frontend en cada push.
-El código se publicó desde el conector porque el entorno local de Codex no permite ejecutar procesos; consultar Actions para el resultado real de validación.
+La app fue verificada en Windows con acceso completo en Codex: creación de turno desde el navegador, llamada a Mesa 1 y finalización. Las cuatro pruebas del backend pasaron.
 
 ## Configuración
 - `OPERATOR_KEY`: obligatoria, mínimo 16 caracteres. No subirla a GitHub.
@@ -57,3 +57,4 @@ El código se publicó desde el conector porque el entorno local de Codex no per
 - Una mesa solo puede atender un turno. Finalizar no llama automáticamente al siguiente: pulsa **Llamar siguiente**.
 - El turno del cliente se conserva en localStorage de ese navegador. Cierra/cancela el turno antes de utilizar el mismo navegador para otra persona.
 - Versión para uso local. Para exposición pública hacen falta HTTPS, gestión de identidades de operadores, limitación de solicitudes, política de retención y despliegue adecuado.
+

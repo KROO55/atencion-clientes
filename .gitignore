@@ -9,3 +9,12 @@ frontend/.angular/
 .env
 .local-services.json
 .logs/
+
+.python-packages/
+.venv-runtime/
+work/
+write-check.tmp
+node-compile-cache/
+frontend/node-compile-cache/
+frontend/proxy.local.json
+
