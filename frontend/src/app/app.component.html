@@ -28,11 +28,12 @@
         <article class="take-card">
           <span class="small-label">TU PRÓXIMO PASO</span><div class="ticket-art" aria-hidden="true">↗</div>
           <h2>Todo empieza<br>con un turno.</h2><p>Sin filas físicas. Registra tu lugar y espera a que una de nuestras mesas esté disponible.</p>
-          <button class="primary take-button" (click)="takeTurn()" [disabled]="busy || !connected || hasActiveTicket">{{busy ? 'Procesando…' : hasActiveTicket ? 'Ya tienes un turno activo' : 'Tomar turno'}} <span>→</span></button>
-          <small>Atendemos por orden de llegada.</small>
+          <button class="primary take-button" (click)="takeTurn()" [disabled]="busy || !connected">{{busy ? 'Procesando…' : hasActiveTicket ? 'Agregar otro turno' : 'Tomar turno'}} <span>→</span></button>
+          <small>Cada clic registra un turno nuevo. Puedes registrar varios clientes desde este equipo.</small>
         </article>
         <article class="ticket-card">
           <div class="card-title"><h2>Mi turno</h2><span class="pill">{{ticket ? statusLabel(ticket.status) : 'Sin turno'}}</span></div>
+          <div class="ticket-history" *ngIf="savedTickets.length > 1"><label for="saved-ticket">Consultar un turno registrado</label><select id="saved-ticket" [ngModel]="token" (ngModelChange)="selectTicket($event)" [disabled]="busy"><option *ngFor="let saved of savedTickets; trackBy: trackToken" [value]="saved.token">{{saved.number}}</option></select></div>
           <ng-container *ngIf="ticket; else emptyTicket">
             <div class="ticket-number" [class.called]="ticket.status === 'serving'">{{ticket.number}}</div>
             <p class="ticket-sub" aria-live="polite">{{ticket.status === 'waiting' ? 'Tu lugar está reservado' : ticket.status === 'serving' ? 'Acércate a la mesa indicada' : statusLabel(ticket.status)}}</p>
@@ -45,14 +46,14 @@
       </section>
 
       <section *ngIf="view === 'mesas' && !authenticated" class="login-card">
-        <span class="small-label">ACCESO DE OPERADORES</span><h2>Mesas de atención</h2><p>Introduce la clave local para gestionar los turnos.</p>
+        <span class="small-label">ACCESO DE OPERADORES</span><h2>Mesas de atención</h2><p>Introduce tu clave de operador para finalizar atenciones y gestionar las mesas. Puedes agregar turnos desde el apartado Turnos.</p>
         <form (ngSubmit)="login()"><label for="operator-key">Clave de operador</label><input id="operator-key" name="key" [(ngModel)]="key" type="password" autocomplete="current-password" required><button class="primary" [disabled]="loading || !key || !connected">{{loading ? 'Validando…' : 'Entrar al panel'}}</button></form>
       </section>
 
       <section class="desks-section" *ngIf="view !== 'mesas' || authenticated">
         <div class="section-title"><div><h2>{{view === 'mesas' ? 'Panel de atención' : 'Nuestras mesas'}}</h2><p>Los turnos se asignan automáticamente cuando una mesa queda libre.</p></div><div *ngIf="view === 'mesas'" class="operator-tools"><button class="primary" [disabled]="busy || !connected" (click)="addTurn()">{{busy ? 'Procesando…' : '+ Agregar turno'}}</button><button class="text-button" (click)="logout()">Cerrar sesión</button></div></div>
         <div class="desks">
-          <article *ngFor="let desk of state.desks" class="desk-card" [class.serving]="desk.ticket" [class.paused]="desk.paused">
+          <article *ngFor="let desk of state.desks; trackBy: trackId" class="desk-card" [class.serving]="desk.ticket" [class.paused]="desk.paused">
             <div class="desk-top"><span class="desk-icon">▦</span><span class="desk-status"><i></i>{{desk.ticket ? 'En atención' : desk.paused ? 'Pausada' : 'Disponible'}}</span></div>
             <h3>Mesa {{desk.id}}</h3><strong>{{desk.ticket?.number || '—'}}</strong><p>{{desk.ticket ? 'Turno en atención' : desk.paused ? 'Temporalmente fuera de servicio' : 'Lista para el siguiente turno'}}</p>
             <div class="desk-actions" *ngIf="view === 'mesas'">
@@ -68,7 +69,7 @@
         <div class="section-title"><div><h2>Próximos turnos</h2><p>Una fila compartida para las cuatro mesas.</p></div><span class="count-pill">{{state.waiting.length}} en espera</span></div>
         <div class="queue-empty" *ngIf="!state.waiting.length"><span>✓</span><div><strong>La fila está libre</strong><p>Los nuevos turnos aparecerán aquí.</p></div></div>
         <div class="queue-list" *ngIf="state.waiting.length">
-          <div class="queue-row" *ngFor="let item of state.waiting | slice:0:20; let first = first"><span class="position">{{item.position}}</span><strong>{{item.number}}</strong><span class="queue-status">{{first ? 'Siguiente en la fila' : 'En espera'}}</span></div>
+          <div class="queue-row" *ngFor="let item of state.waiting | slice:0:20; trackBy: trackId; let first = first"><span class="position">{{item.position}}</span><strong>{{item.number}}</strong><span class="queue-status">{{first ? 'Siguiente en la fila' : 'En espera'}}</span></div>
           <p *ngIf="state.waiting.length > 20" class="more">{{state.waiting.length - 20}} turnos más en espera</p>
         </div>
       </section>

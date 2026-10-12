@@ -9,6 +9,14 @@ interface Ticket {
 }
 interface Desk { id: number; paused: boolean; ticket: Ticket | null; }
 interface State { waiting: Ticket[]; desks: Desk[]; completed: number; updated_at: string; }
+interface SavedTicket { token: string; number: string; }
+
+function readTickets(): SavedTicket[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem('queue-tickets') || '[]');
+    return Array.isArray(saved) ? saved.filter(t => typeof t?.token === 'string' && typeof t?.number === 'string') : [];
+  } catch { return []; }
+}
 
 @Component({
   selector: 'app-root',
@@ -21,6 +29,8 @@ export class AppComponent implements OnInit, OnDestroy {
   state: State = {waiting: [], desks: [1,2,3,4].map(id => ({id, paused: false, ticket: null})), completed: 0, updated_at: ''};
   ticket: Ticket | null = null;
   token = localStorage.getItem('queue-token') || '';
+  savedTickets = readTickets();
+  private pendingRequestId = localStorage.getItem('queue-pending-request') || '';
   key = '';
   authenticated = false;
   error = '';
@@ -28,11 +38,13 @@ export class AppComponent implements OnInit, OnDestroy {
   connected = false;
   busy = false;
   loading = false;
-  private polling = false;
+  private refreshTask?: Promise<void>;
   private operatorRequestId = '';
   private timer?: ReturnType<typeof setInterval>;
   get activeDesks(): number { return this.state.desks.filter(d => !!d.ticket).length; }
   get hasActiveTicket(): boolean { return this.ticket?.status === 'waiting' || this.ticket?.status === 'serving'; }
+  trackId(_index: number, item: {id: number}): number { return item.id; }
+  trackToken(_index: number, item: SavedTicket): string { return item.token; }
 
   ngOnInit(): void {
     void this.refresh();
@@ -46,7 +58,7 @@ export class AppComponent implements OnInit, OnDestroy {
     if (operator) headers['Authorization'] = 'Bearer ' + this.key;
     const response = await fetch('/api' + path, {
       method, headers, body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(10000)
+      signal: AbortSignal.timeout(30000), cache: 'no-store'
     });
     if (!response.ok) {
       if (response.status === 401 && operator) this.authenticated = false;
@@ -56,18 +68,49 @@ export class AppComponent implements OnInit, OnDestroy {
     return await response.json() as T;
   }
 
-  async refresh(): Promise<void> {
-    if (this.polling) return;
-    this.polling = true;
+  async refresh(force = false): Promise<void> {
+    if (this.refreshTask) {
+      await this.refreshTask;
+      if (!force) return;
+    }
+    if (this.busy && !force) return;
+    const task = this.loadState();
+    this.refreshTask = task;
+    try { await task; }
+    finally { if (this.refreshTask === task) this.refreshTask = undefined; }
+  }
+
+  private async loadState(): Promise<void> {
     try {
       this.state = await this.api<State>('/state');
       this.connected = true;
       if (this.token) {
-        try { this.ticket = await this.api<Ticket>('/tickets/' + this.token); }
+        const selectedToken = this.token;
+        try {
+          const selected = await this.api<Ticket>('/tickets/' + selectedToken);
+          if (this.token === selectedToken) {
+            this.ticket = selected;
+            this.rememberTicket(selectedToken, selected.number);
+          }
+        }
         catch (error) { this.error = this.message(error); }
       }
     } catch { this.connected = false; }
-    finally { this.polling = false; }
+  }
+
+  private rememberTicket(token: string, number: string): void {
+    if (!this.savedTickets.some(t => t.token === token)) {
+      this.savedTickets = [{token, number}, ...this.savedTickets];
+      localStorage.setItem('queue-tickets', JSON.stringify(this.savedTickets));
+    }
+  }
+
+  async selectTicket(token: string): Promise<void> {
+    if (this.busy) return;
+    this.token = token;
+    this.ticket = null;
+    localStorage.setItem('queue-token', this.token);
+    await this.refresh(true);
   }
 
   private message(error: unknown): string {
@@ -75,17 +118,21 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async takeTurn(): Promise<void> {
-    if (this.busy || !this.connected || this.hasActiveTicket) return;
+    if (this.busy || !this.connected) return;
     this.busy = true; this.error = ''; this.notice = '';
     try {
-      // Persist before sending; a retry after a lost response cannot create a second ticket.
-      if (!this.token || this.ticket?.status === 'completed' || this.ticket?.status === 'cancelled') {
-        this.token = crypto.randomUUID();
-        localStorage.setItem('queue-token', this.token);
-      }
-      this.ticket = await this.api<Ticket>('/tickets', 'POST', {request_id: this.token});
-      this.notice = 'Tu turno está registrado. Sigue su estado aquí.';
-      await this.refresh();
+      // A new click creates a new ticket; retries reuse the pending request only.
+      this.pendingRequestId ||= crypto.randomUUID();
+      localStorage.setItem('queue-pending-request', this.pendingRequestId);
+      const created = await this.api<Ticket>('/tickets', 'POST', {request_id: this.pendingRequestId});
+      this.token = this.pendingRequestId;
+      this.ticket = created;
+      localStorage.setItem('queue-token', this.token);
+      this.rememberTicket(this.token, created.number);
+      this.pendingRequestId = '';
+      localStorage.removeItem('queue-pending-request');
+      this.notice = created.desk_id ? created.number + ' asignado a Mesa ' + created.desk_id : created.number + ' agregado a la fila de espera';
+      await this.refresh(true);
     } catch (error) { this.error = this.message(error); }
     finally { this.busy = false; }
   }
@@ -97,7 +144,7 @@ export class AppComponent implements OnInit, OnDestroy {
       await this.api('/tickets/' + this.token + '/cancel', 'POST');
       this.ticket = await this.api<Ticket>('/tickets/' + this.token);
       this.notice = 'Tu turno fue cancelado.';
-      await this.refresh();
+      await this.refresh(true);
     } catch (error) { this.error = this.message(error); }
     finally { this.busy = false; }
   }
@@ -122,7 +169,7 @@ export class AppComponent implements OnInit, OnDestroy {
       const added = await this.api<Ticket>('/tickets', 'POST', {request_id: this.operatorRequestId});
       this.operatorRequestId = '';
       this.notice = added.desk_id ? added.number + ' asignado a Mesa ' + added.desk_id : added.number + ' agregado a la fila de espera';
-      await this.refresh();
+      await this.refresh(true);
     } catch (error) { this.error = this.message(error); }
     finally { this.busy = false; }
   }
@@ -136,8 +183,8 @@ export class AppComponent implements OnInit, OnDestroy {
       const result = await this.api<{next_ticket?: Ticket | null}>('/desks/' + desk.id + '/' + action, 'POST', body, true);
       this.notice = action === 'next' ? 'Turno llamado a mesa ' + desk.id :
         action === 'finish' ? 'Atención finalizada' + (result.next_ticket ? '. ' + result.next_ticket.number + ' asignado a Mesa ' + desk.id : '. Mesa disponible') : 'Estado de mesa actualizado';
-      await this.refresh();
-    } catch (error) { this.error = this.message(error); await this.refresh(); }
+      await this.refresh(true);
+    } catch (error) { this.error = this.message(error); await this.refresh(true); }
     finally { this.busy = false; }
   }
 
