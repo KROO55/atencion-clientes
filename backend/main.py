@@ -13,6 +13,27 @@ from pydantic import BaseModel
 
 DB = os.environ.get("QUEUE_DB", str(Path(__file__).parent / "data" / "queue.db"))
 OPERATOR_KEY = os.environ.get("OPERATOR_KEY", "")
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+
+class PostgresConnection:
+    """Keep the queue SQL shared with the local SQLite implementation."""
+    def __init__(self, conn):
+        self.conn = conn
+
+    @staticmethod
+    def sql(query):
+        query = query.replace("?", "%s")
+        if "INSERT OR IGNORE" in query:
+            query = query.replace("INSERT OR IGNORE", "INSERT") + " ON CONFLICT DO NOTHING"
+        return query
+
+    def execute(self, query, parameters=()):
+        return self.conn.execute(self.sql(query), parameters)
+
+    def executemany(self, query, parameters):
+        with self.conn.cursor() as cursor:
+            cursor.executemany(self.sql(query), parameters)
 
 
 def now():
@@ -21,6 +42,19 @@ def now():
 
 @contextmanager
 def connection(write=False):
+    if DATABASE_URL:
+        import psycopg
+        from psycopg.rows import dict_row
+        with psycopg.connect(DATABASE_URL, row_factory=dict_row, connect_timeout=10) as conn:
+            if write:
+                # Serialize queue mutations across all serverless instances.
+                conn.execute("SELECT pg_advisory_xact_lock(734201001)")
+            else:
+                conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            yield PostgresConnection(conn)
+        return
+    if os.environ.get("VERCEL"):
+        raise RuntimeError("DATABASE_URL es obligatorio en Vercel; SQLite es solo para pruebas locales")
     conn = sqlite3.connect(DB, timeout=30)
     conn.row_factory = sqlite3.Row
     try:
@@ -36,13 +70,15 @@ def connection(write=False):
 
 
 def initialize():
-    Path(DB).parent.mkdir(parents=True, exist_ok=True)
+    if not DATABASE_URL:
+        Path(DB).parent.mkdir(parents=True, exist_ok=True)
     with connection(True) as conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS desks(
             id INTEGER PRIMARY KEY CHECK(id BETWEEN 1 AND 4),
             paused INTEGER NOT NULL DEFAULT 0 CHECK(paused IN (0,1)))""")
-        conn.execute("""CREATE TABLE IF NOT EXISTS tickets(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+        identity = "BIGSERIAL PRIMARY KEY" if DATABASE_URL else "INTEGER PRIMARY KEY AUTOINCREMENT"
+        conn.execute(f"""CREATE TABLE IF NOT EXISTS tickets(
+            id {identity},
             token TEXT NOT NULL UNIQUE,
             status TEXT NOT NULL DEFAULT 'waiting'
                 CHECK(status IN ('waiting','serving','completed','cancelled')),
@@ -93,8 +129,8 @@ def ticket_view(conn, row):
     position = None
     if row["status"] == "waiting":
         position = conn.execute(
-            "SELECT COUNT(*) FROM tickets WHERE status='waiting' AND id<=?", (row["id"],)
-        ).fetchone()[0]
+            "SELECT COUNT(*) AS total FROM tickets WHERE status='waiting' AND id<=?", (row["id"],)
+        ).fetchone()["total"]
     return {"id": row["id"], "number": f"T{row['id']:04d}", "status": row["status"],
             "desk_id": row["desk_id"], "position": position,
             "created_at": row["created_at"], "called_at": row["called_at"],
@@ -136,7 +172,7 @@ def state():
             active = conn.execute("SELECT * FROM tickets WHERE desk_id=? AND status='serving'", (desk["id"],)).fetchone()
             desks.append({"id": desk["id"], "paused": bool(desk["paused"]),
                           "ticket": ticket_view(conn, active) if active else None})
-        completed = conn.execute("SELECT COUNT(*) FROM tickets WHERE status='completed'").fetchone()[0]
+        completed = conn.execute("SELECT COUNT(*) AS total FROM tickets WHERE status='completed'").fetchone()["total"]
         return {"waiting": [ticket_view(conn, row) for row in waiting], "desks": desks,
                 "completed": completed, "updated_at": now()}
 

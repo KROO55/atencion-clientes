@@ -4,15 +4,34 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 
 class QueueTests(unittest.TestCase):
     def setUp(self):
+        self.environment = patch.dict(os.environ)
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+        os.environ.pop('DATABASE_URL', None)
         self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
         os.environ["QUEUE_DB"] = os.path.join(self.temp.name, "queue.db")
         os.environ["OPERATOR_KEY"] = "test-operator-key-at-least-16"
+        if os.environ.get('TEST_DATABASE_URL'):
+            import psycopg
+            from psycopg import sql
+            from psycopg.conninfo import make_conninfo
+            url = os.environ['TEST_DATABASE_URL']
+            schema = 'test_queue_' + uuid4().hex
+            with psycopg.connect(url) as conn:
+                conn.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
+            def remove_schema():
+                with psycopg.connect(url) as conn:
+                    conn.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
+            self.addCleanup(remove_schema)
+            os.environ['DATABASE_URL'] = make_conninfo(url, options='-c search_path=' + schema)
         import backend.main
         self.module = importlib.reload(backend.main)
         self.client = TestClient(self.module.app)
