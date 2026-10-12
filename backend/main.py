@@ -5,6 +5,7 @@ import sqlite3
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -14,6 +15,8 @@ from pydantic import BaseModel
 DB = os.environ.get("QUEUE_DB", str(Path(__file__).parent / "data" / "queue.db"))
 OPERATOR_KEY = os.environ.get("OPERATOR_KEY", "")
 DATABASE_URL = os.environ.get("DATABASE_URL")
+_initialized = False
+_startup_lock = Lock()
 
 
 class PostgresConnection:
@@ -108,13 +111,23 @@ def assign_waiting(conn):
 
 @asynccontextmanager
 async def lifespan(app):
-    if len(OPERATOR_KEY) < 16:
-        raise RuntimeError("OPERATOR_KEY debe contener al menos 16 caracteres")
-    initialize()
+    ensure_initialized()
     yield
 
 
-app = FastAPI(title="Atención a clientes", lifespan=lifespan)
+def ensure_initialized():
+    """Also initialize on hosts that do not send ASGI lifespan events."""
+    global _initialized
+    with _startup_lock:
+        if not _initialized:
+            if len(OPERATOR_KEY) < 16:
+                raise RuntimeError("OPERATOR_KEY debe contener al menos 16 caracteres")
+            initialize()
+            _initialized = True
+
+
+app = FastAPI(title="Atención a clientes", lifespan=lifespan,
+              dependencies=[Depends(ensure_initialized)])
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:4200", "http://127.0.0.1:4200"],
                    allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type"])
 

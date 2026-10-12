@@ -58,3 +58,9 @@ La app fue verificada en Windows con acceso completo en Codex: creación de turn
 - El turno del cliente se conserva en localStorage de ese navegador. Para registrar varios clientes desde la misma laptop, entra en Mesas de atención y usa Agregar turno; cada clic genera un folio independiente.
 - Versión para uso local. Para exposición pública hacen falta HTTPS, gestión de identidades de operadores, limitación de solicitudes, política de retención y despliegue adecuado.
 
+## Publicación en Vercel
+
+El archivo `vercel.json` publica Angular y FastAPI juntos mediante Vercel Services (beta), con la API en `/api` y la interfaz en `/`. En Vercel se requiere `DATABASE_URL` de PostgreSQL persistente y `OPERATOR_KEY` como variables sensibles. La integración Neon configura automáticamente la conexión; SQLite continúa disponible para las pruebas locales. No se copian los datos de prueba de la laptop al entorno público.
+
+Las escrituras de PostgreSQL se serializan con un bloqueo transaccional compartido entre instancias para conservar FIFO y evitar asignaciones duplicadas. CI comprueba el flujo con SQLite y PostgreSQL, incluidas solicitudes simultáneas. El panel de mesas sigue protegido por la clave de operador.
+
