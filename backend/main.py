@@ -227,6 +227,26 @@ def session():
     return {"authenticated": True}
 
 
+def complete_ticket(conn, row):
+    desk_id = row["desk_id"]
+    conn.execute("UPDATE tickets SET status='completed',completed_at=? WHERE id=?", (now(), row["id"]))
+    assign_waiting(conn)
+    next_ticket = conn.execute("SELECT * FROM tickets WHERE desk_id=? AND status='serving'", (desk_id,)).fetchone()
+    return {"status": "completed", "next_ticket": ticket_view(conn, next_ticket) if next_ticket else None}
+
+
+@app.post("/api/tickets/{token}/finish")
+def finish_own_ticket(token: UUID):
+    # Only the browser holding the private ticket token can finish this ticket.
+    with connection(True) as conn:
+        row = conn.execute("SELECT * FROM tickets WHERE token=?", (str(token),)).fetchone()
+        if row is None:
+            raise HTTPException(404, "Turno no encontrado")
+        if row["status"] != "serving":
+            raise HTTPException(409, "Solo puedes finalizar un turno en atención")
+        return complete_ticket(conn, row)
+
+
 @app.post("/api/desks/{desk_id}/next", dependencies=[Depends(operator)])
 def call_next(desk_id: int):
     with connection(True) as conn:
@@ -251,10 +271,7 @@ def finish(desk_id: int, payload: Finish):
                            (payload.ticket_id, desk_id)).fetchone()
         if row is None:
             raise HTTPException(409, "Ese turno ya no está siendo atendido en esta mesa")
-        conn.execute("UPDATE tickets SET status='completed',completed_at=? WHERE id=?", (now(), row["id"]))
-        assign_waiting(conn)
-        next_ticket = conn.execute("SELECT * FROM tickets WHERE desk_id=? AND status='serving'", (desk_id,)).fetchone()
-        return {"status": "completed", "next_ticket": ticket_view(conn, next_ticket) if next_ticket else None}
+        return complete_ticket(conn, row)
 
 
 @app.post("/api/desks/{desk_id}/pause", dependencies=[Depends(operator)])

@@ -40,6 +40,8 @@
             <div class="ticket-details"><div><span>Tu posición</span><strong>{{ticket.position ?? '—'}}</strong></div><div><span>Mesa asignada</span><strong>{{ticket.desk_id ?? '—'}}</strong></div></div>
             <p class="ticket-help" *ngIf="ticket.status === 'waiting'">Mantén esta página abierta para ver cuándo te llamen.</p>
             <button class="text-button" *ngIf="ticket.status === 'waiting'" [disabled]="busy || !connected" (click)="cancel()">Cancelar mi turno</button>
+            <button class="primary finish" *ngIf="ticket.status === 'serving'" [disabled]="busy || !connected" (click)="finishTurn()">{{busy ? 'Finalizando…' : 'Finalizar turno'}}</button>
+            <p class="ticket-help" *ngIf="ticket.status === 'serving'">Al finalizar, se libera tu mesa y pasa el siguiente turno en espera.</p>
           </ng-container>
           <ng-template #emptyTicket><div class="empty-ticket"><span>⌁</span><h3>Aún no tienes un turno</h3><p>Pulsa “Tomar turno” para entrar a la fila.<br>Tu folio aparecerá aquí.</p></div></ng-template>
         </article>

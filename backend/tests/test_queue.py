@@ -111,6 +111,24 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/tickets/"+ticket["token"]).json()["number"], ticket["number"])
         self.assertEqual(self.client.get('/api/tickets/'+ticket['token']).json()['desk_id'], 1)
 
+    def test_finish_own_turn_releases_desk_and_advances_fifo(self):
+        tickets = [self.take() for _ in range(6)]
+        self.assertEqual(self.client.post('/api/tickets/'+str(uuid4())+'/finish').status_code, 404)
+        self.assertEqual(self.client.post('/api/tickets/'+tickets[4]['token']+'/finish').status_code, 409)
+        result = self.client.post('/api/tickets/'+tickets[0]['token']+'/finish')
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json()['next_ticket']['id'], tickets[4]['id'])
+        self.assertEqual(result.json()['next_ticket']['desk_id'], 1)
+        # Repeating an old completion cannot finish the next person's turn.
+        self.assertEqual(self.client.post('/api/tickets/'+tickets[0]['token']+'/finish').status_code, 409)
+        self.assertEqual(self.client.get('/api/tickets/'+tickets[4]['token']).json()['status'], 'serving')
+        for ticket in tickets[1:]:
+            self.assertEqual(self.client.post('/api/tickets/'+ticket['token']+'/finish').status_code, 200)
+        state = self.client.get('/api/state').json()
+        self.assertEqual(state['completed'], 6)
+        self.assertFalse(state['waiting'])
+        self.assertTrue(all(d['ticket'] is None for d in state['desks']))
+
 
 if __name__ == "__main__":
     unittest.main()

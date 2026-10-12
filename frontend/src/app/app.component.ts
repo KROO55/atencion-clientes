@@ -160,6 +160,19 @@ export class AppComponent implements OnInit, OnDestroy {
   }
   logout(): void { this.key = ''; this.authenticated = false; }
 
+  async finishTurn(): Promise<void> {
+    if (this.busy || !this.connected || this.ticket?.status !== 'serving') return;
+    this.busy = true; this.error = ''; this.notice = '';
+    const token = this.token;
+    const desk = this.ticket.desk_id;
+    try {
+      const result = await this.api<{next_ticket: Ticket | null}>('/tickets/' + token + '/finish', 'POST');
+      this.notice = result.next_ticket ? 'Atención finalizada. ' + result.next_ticket.number + ' asignado a Mesa ' + desk : 'Atención finalizada. Mesa ' + desk + ' disponible';
+      await this.refresh(true);
+    } catch (error) { this.error = this.message(error); await this.refresh(true); }
+    finally { this.busy = false; }
+  }
+
   async addTurn(): Promise<void> {
     if (this.busy || !this.connected || !this.authenticated) return;
     this.busy = true; this.error = ''; this.notice = '';
